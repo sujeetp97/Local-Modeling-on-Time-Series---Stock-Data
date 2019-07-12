@@ -1,0 +1,184 @@
+---
+title: "Analysis and Conclusions"
+output: html_notebook
+---
+
+Setting up the environment
+```{r}
+
+source("lib/timeseries_local_modeling_functions.R")
+library(data.table)
+library(ggplot2)
+
+```
+
+
+Load and saving the  data
+```{r}
+
+## Reading the Stocks
+API_KEY = 'X5THDLQME1LXJKF4'
+symbol <- "AAPL"
+
+intraday_url <- paste0("https://www.alphavantage.co/query?function=TIME_SERIES_INTRADAY&symbol=", symbol,"&interval=60min&apikey=", API_KEY, "&outputsize=full&datatype=csv")
+daily_url <- paste0("https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol=", symbol,"&apikey=", API_KEY, "&outputsize=full&datatype=csv")
+
+intraday_stock_dt <- as.data.table(read.csv(intraday_url))
+intraday_stock_dt[, timestamp := as.POSIXct(timestamp)]
+
+daily_stock_dt <- as.data.table(read.csv(daily_url))
+daily_stock_dt[, timestamp := as.Date(timestamp, format("%Y-%m-%d"))]
+
+saveRDS(intraday_stock_dt, "data/intraday_stock_dt.rds")
+saveRDS(daily_stock_dt, "data/daily_stock_dt.rds")
+
+y <- stock_dt$open
+
+
+```
+
+
+Comparative Analysis
+```{r echo=FALSE}
+y <- readRDS(file = "data/daily_stock_dt.rds")
+y <- y[order(timestamp, decreasing = F)]
+y <- y$open
+
+# Initial values for n and k to brutefore
+n <- 90
+k <- 90
+
+n_threshold <- 7
+k_threshold <- 7
+partition_index <- 14
+training <- y[1:(NROW(y)-partition_index)]
+testing <- y[(NROW(y)-(partition_index-1)):NROW(y)]
+
+# Get 7 days predictions
+h <- 7
+n_threshold <- h
+k_threshold <- h
+weekly_prediction_on_daily_data <- get_comparative_results(training = training, testing = testing[1:h], n = n, k = k, h = h, n_threshold = n_threshold, k_threshold = k_threshold, update_k_threshold = F)
+
+# Get 14 days predictions
+h <- 14
+n_threshold <- h
+k_threshold <- h
+biweekly_prediction_on_daily_data <- get_comparative_results(training = training, testing = testing[1:h], n = n, k = k, h = h, n_threshold = n_threshold, k_threshold = k_threshold, update_k_threshold = F)
+
+# Get 7 days predictions with adjusted k_threshold. Optimal k found from the first run for h = 1 is used as the threshold
+h <- 7
+n_threshold <- h
+k_threshold <- h
+weekly_prediction_on_daily_data_updated_k_threshold <- get_comparative_results(training = training, testing = testing[1:h], n = n, k = k, h = h, n_threshold = n_threshold, k_threshold = k_threshold, update_k_threshold = T)
+
+# Get 14 days predictions with adjusted k_threshold. Optimal k found from the first run for h = 1 is used as the threshold
+h <- 14
+n_threshold <- h
+k_threshold <- h
+biweekly_prediction_on_daily_data_updated_k_threshold <- get_comparative_results(training = training, testing = testing[1:h], n = n, k = k, h = h, n_threshold = n_threshold, k_threshold = k_threshold, update_k_threshold = T)
+
+# Finetuning 7 days predictions with adjusted k_threshold, with values we got from h = 14.
+n <- 30
+k <- 50
+n_threshold <- 14
+k_threshold <- 14
+h <- 7
+weekly_prediction_on_daily_data_updated_k_threshold_adj <- get_comparative_results(training = training, testing = testing[1:h], n = n, k = k, h = h, n_threshold = n_threshold, k_threshold = k_threshold, update_k_threshold = T)
+
+
+
+# saveRDS(object = weekly_prediction_on_daily_data, file = "data/weekly_prediction_on_daily_data.rds")
+# saveRDS(object = biweekly_prediction_on_daily_data, file = "data/biweekly_prediction_on_daily_data.rds")
+# saveRDS(object = weekly_prediction_on_daily_data_updated_k_threshold, file = "data/weekly_prediction_on_daily_data_updated_k_threshold.rds")
+# saveRDS(object = biweekly_prediction_on_daily_data_updated_k_threshold, file = "data/biweekly_prediction_on_daily_data_updated_k_threshold.rds")
+# saveRDS(object = weekly_prediction_on_daily_data_updated_k_threshold_adj, file = "data/weekly_prediction_on_daily_data_updated_k_threshold_adj.rds")
+
+
+```
+
+
+# Conclusions
+
+Loading the comparison result objects
+```{r}
+
+weekly_prediction_on_daily_data <- readRDS(file = "data/weekly_prediction_on_daily_data.rds")
+biweekly_prediction_on_daily_data <- readRDS(file = "data/biweekly_prediction_on_daily_data.rds")
+weekly_prediction_on_daily_data_updated_k_threshold <- readRDS(file = "data/weekly_prediction_on_daily_data_updated_k_threshold.rds")
+biweekly_prediction_on_daily_data_updated_k_threshold <- readRDS(file = "data/biweekly_prediction_on_daily_data_updated_k_threshold.rds")
+weekly_prediction_on_daily_data_updated_k_threshold_adj <- readRDS(file = "data/weekly_prediction_on_daily_data_updated_k_threshold_adj.rds")
+
+```
+
+
+h=7 prediction with k values recalculated everytime.
+```{r}
+weekly_prediction_on_daily_data$comparison_plot
+View(weekly_prediction_on_daily_data$comparison_summary)
+View(weekly_prediction_on_daily_data$comparison_dt)
+
+```
+Observations:
+1. DirRec and Recusive seems to have the lowest mean delta from observed. 
+2. Because of the similarity in structure for the first step, Direct, Recursive and DirRec has the same predictions and LOO error. 
+3. From the plot, we can see the all four models were really close for the first step of prediction, then Recursive and DirRec stays rather constant for the remaining steps whereas the rest two - Direct and MIMO diverge from the observed.
+
+
+h=7 prediction with k threshold adjusted to the first found optimal k
+```{r}
+weekly_prediction_on_daily_data_updated_k_threshold$comparison_plot
+View(weekly_prediction_on_daily_data_updated_k_threshold$comparison_summary)
+View(weekly_prediction_on_daily_data_updated_k_threshold$comparison_dt)
+
+```
+Observations:
+1. One striking improvement from weekly_prediction_on_daily_data is for Recursive, where mean and sd of Delta has reduced by approximately 1 point. Other models have similar mean and sd of Delta as weekly_prediction_on_daily_data.
+2. Minimal to no change in performance of MIMO.
+3. Direct Model has improved overall and better than MIMO because of the inclusion of more neighbors.
+4. DirRec and Recursive now show trend, with both getting closer to the observed.
+5. Recursive has moved closest to the observed, but with almost no cycle, whereas DirRec still shows hints of a cycle in its predictions.
+
+h=7 prediction with k threshold adjusted to the first found optimal k. The model parameters were finetuned to run lesser combinations of n and k and n_threshold and k_threshold were set at 14 at the start of the run instead of h which is 7.
+```{r}
+weekly_prediction_on_daily_data_updated_k_threshold_adj$comparison_plot
+View(weekly_prediction_on_daily_data_updated_k_threshold_adj$comparison_summary)
+View(weekly_prediction_on_daily_data_updated_k_threshold_adj$comparison_dt)
+
+```
+
+1. Setting an initial n and k higher than h, might have resulted in getting the wrong embedding dimension for the purpose. As all models have degraded in purpose for steps greater than 1.
+
+
+h=14 prediction with k values recalculated everytime.
+```{r}
+biweekly_prediction_on_daily_data$comparison_plot
+View(biweekly_prediction_on_daily_data$comparison_summary)
+View(biweekly_prediction_on_daily_data$comparison_dt)
+
+```
+1. MIMO predictions are starting with a higher delta for the first step itself as compared to the others.
+2. Direct is close for the first 2 steps and quickly diverges
+3. DirRec stays almost constant for all the steps
+4. The closest and the best model is given by Recursive
+
+
+
+
+h=14 prediction with k threshold adjusted to the first found optimal k
+```{r}
+biweekly_prediction_on_daily_data_updated_k_threshold$comparison_plot
+View(biweekly_prediction_on_daily_data_updated_k_threshold$comparison_summary)
+View(biweekly_prediction_on_daily_data_updated_k_threshold$comparison_dt)
+```
+1. MIMO predictions are starting with a higher delta for the first step itself as compared to the others.
+2. Direct diverges quickly from the observed
+3. The closest models are given by Recursive and DirRec, with DirRec being the closest throughout
+
+
+
+Final Conlusions:
+
+1. It appears that if the selection of n and k is set to data driven techniques, then DirRec and Recursive can give very good multi step forecasts although it will take longer in terms of modeling tasks.
+2. With a more formal process for selecting embedding dimension, the model can get more accurate and faster.
+3. Replacing constant models with local linear models can improve accuracy.

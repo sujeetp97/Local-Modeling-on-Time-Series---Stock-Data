@@ -1,0 +1,2 @@
+Time Series Forecasting with KNN in R: the tsfknn Package - https://cran.r-project.org/web/packages/tsfknn/vignettes/tsfknn.html
+local-modeling-in-regression-and-time-series-prediction - https://www.slideshare.net/gbonte/local-modeling-in-regression-and-time-series-prediction
